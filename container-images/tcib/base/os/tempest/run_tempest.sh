@@ -97,6 +97,10 @@ TEMPEST_ARGS=""
 TEMPEST_DEBUG_MODE="${TEMPEST_DEBUG_MODE:-false}"
 TEMPEST_CLEANUP="${TEMPEST_CLEANUP:-false}"
 
+TEMPEST_STESTR="$HOMEDIR/openshift/.stestr"
+STESTR_REPO_URL="https://gitlab.cee.redhat.com/kstrenko/tempest-stestr-data.git"
+STESTR_REPO_DIR="components-integration/component-cinder-edpm-rhel9-rhoso18.0-crc-nfs/tempest-tests-tempest"
+
 function catch_error_if_debug {
     echo "File run_tempest.sh has run into an error!"
     sleep infinity
@@ -291,6 +295,11 @@ function upload_extra_images {
     done
 }
 
+function pull_timing_data {
+    git clone ${STESTR_REPO_URL} ${HOMEDIR}/stestr-repo
+    FULL_PATH=${HOMEDIR}/stestr-repo/${STESTR_REPO_DIR}
+    cp -rf ${FULL_PATH}/* ${TEMPEST_STESTR}
+}
 
 # This function ensures all arguments are handled properly:
 # - Embedded quotes are preserved, e.g. "Some string"
@@ -366,6 +375,8 @@ function run_git_tempest {
 
     mkdir -p ${TEMPEST_LOGS_DIR}
 
+    pull_timing_data
+
     discover_tempest_config ${TEMPESTCONF_ARGS} ${TEMPESTCONF_OVERRIDES} \
     && tempest run ${TEMPEST_ARGS}
     RETURN_VALUE=$?
@@ -414,6 +425,8 @@ function run_rpm_tempest {
 
     mkdir -p ${TEMPEST_LOGS_DIR}
 
+    pull_timing_data
+
     discover_tempest_config ${TEMPESTCONF_ARGS} ${TEMPESTCONF_OVERRIDES} \
     && tempest run ${TEMPEST_ARGS}
     RETURN_VALUE=$?
@@ -457,6 +470,21 @@ function generate_test_results {
     popd
 }
 
+function push_timing_data {
+    git clone --branch main ${STESTR_REPO_URL} ${HOMEDIR}/stestr-repo
+    FULL_PATH=${HOMEDIR}/stestr-repo/${STESTR_REPO_DIR}
+    mkdir -p ${FULL_PATH}
+    cp -r ${TEMPEST_STESTR}/* ${FULL_PATH}
+
+    git config --global user.email "dev@null.io"
+    git config --global user.name "Dummy"
+
+    cd ${HOMEDIR}/stestr-repo
+    git add ${STESTR_REPO_DIR}
+    git commit -m "Test update ${STESTR_REPO_DIR}."
+    git push origin main
+}
+
 export OS_CLOUD=default
 
 if [ ! -z ${USE_EXTERNAL_FILES} ] && [ -e ${TEMPEST_PATH}clouds.yaml ]; then
@@ -493,6 +521,8 @@ else
 fi
 
 generate_test_results
+
+push_timing_data
 
 # Keep pod in running state when in debug mode
 if [ ${TEMPEST_DEBUG_MODE} == true ]; then
